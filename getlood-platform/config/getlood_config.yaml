@@ -1,0 +1,327 @@
+# GETLOOD Platform Configuration
+# Complete configuration for GETLOOD platform powered by MindsDB
+
+version: "3.0.0"
+environment: "development"  # development, staging, production
+
+# MindsDB Connection
+mindsdb:
+  http_url: "http://localhost:47334"
+  sql_url: "postgresql://mindsdb:mindsdb@localhost:47334/mindsdb"
+  a2a_url: "http://localhost:47334/a2a"
+  api_key: null  # Set via MINDSDB_API_KEY env var
+  timeout: 30
+  max_retries: 3
+
+# Default AI Models
+ai_models:
+  # Intent Detection
+  intent_detector:
+    model: "google/gemini-2.5-flash"
+    provider: "google"
+    temperature: 0.3
+    max_tokens: 1000
+
+  # Default Chat Agent
+  chat_agent:
+    model: "google/gemini-2.5-flash"
+    provider: "google"
+    temperature: 0.7
+    max_tokens: 2000
+
+  # Code Generation
+  code_generator:
+    model: "anthropic/claude-3-5-sonnet"
+    provider: "anthropic"
+    temperature: 0.2
+    max_tokens: 4000
+
+  # Data Analysis
+  data_analyzer:
+    model: "openai/gpt-4"
+    provider: "openai"
+    temperature: 0.1
+    max_tokens: 3000
+
+  # UI Generation
+  ui_generator:
+    model: "google/gemini-2.5-pro"
+    provider: "google"
+    temperature: 0.5
+    max_tokens: 5000
+
+  # Embeddings (for knowledge bases)
+  embeddings:
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    dimensions: 384
+
+# Pipeline Configuration
+pipeline:
+  # Stage timeouts (milliseconds)
+  timeouts:
+    intent_detection: 5000
+    routing: 1000
+    agent_selection: 2000
+    execution: 30000
+    enhancement: 5000
+
+  # Reasoning methods per intent type
+  reasoning_mappings:
+    CREATE_WORKFLOW: "ToT"  # Tree of Thoughts
+    ANALYZE_DATA: "CoT"     # Chain of Thought
+    GENERATE_UI: "ToT"
+    OS_CONTROL: "ReAct"     # Reasoning + Acting
+    CODE_GENERATION: "CoT"
+    CHAT: null              # No reasoning needed
+
+  # Intent confidence thresholds
+  confidence_thresholds:
+    high: 0.85
+    medium: 0.60
+    low: 0.40
+    clarification_needed: 0.40  # Below this, ask for clarification
+
+# Agent Registry
+agents:
+  # Pre-configured system agents
+  system_agents:
+    - name: "intent_detector"
+      project: "system"
+      model: "google/gemini-2.5-flash"
+      skills: ["intent_classification", "nlp"]
+      prompt: |
+        You are an expert intent classifier. Analyze user messages and classify them into one of these intents:
+        CREATE_WORKFLOW, ANALYZE_DATA, GENERATE_UI, CHAT, OS_CONTROL, CODE_GENERATION, BROWSER_NAVIGATION, COMPUTER_USE, CLARIFICATION_NEEDED.
+
+        Return a JSON object with:
+        - intent_type: The classified intent
+        - confidence: Float 0-1
+        - parameters: Extracted parameters as dict
+        - needs_reasoning: Boolean
+        - ambiguity: Object if ambiguous (is_ambiguous, candidates, clarification_question, quick_replies)
+
+    - name: "chat"
+      project: "system"
+      model: "google/gemini-2.5-flash"
+      skills: ["chat", "conversation", "general_knowledge"]
+      prompt: |
+        You are GETLOOD's friendly AI assistant. Provide helpful, concise, and accurate responses.
+        Be conversational but professional.
+
+    - name: "data_analyzer"
+      project: "system"
+      model: "openai/gpt-4"
+      skills: ["data_analysis", "statistics", "visualization", "sql"]
+      prompt: |
+        You are a data analysis expert. Help users understand their data through:
+        - SQL queries
+        - Statistical analysis
+        - Visualization recommendations
+        - Insights and patterns
+
+        Always explain your reasoning clearly.
+
+    - name: "ui_generator"
+      project: "system"
+      model: "google/gemini-2.5-pro"
+      skills: ["ui_generation", "react", "frontend", "tailwind"]
+      prompt: |
+        You are a UI/UX expert specializing in React + Tailwind CSS.
+        Generate clean, accessible, and beautiful components.
+        Follow these principles:
+        - Mobile-first responsive design
+        - Accessibility (WCAG 2.1 AA)
+        - Modern, minimalist aesthetics
+        - Performance-optimized
+
+    - name: "workflow_builder"
+      project: "system"
+      model: "anthropic/claude-3-5-sonnet"
+      skills: ["workflow_creation", "automation", "orchestration"]
+      prompt: |
+        You are a workflow automation expert. Design efficient workflows with:
+        - Clear triggers and actions
+        - Error handling
+        - Monitoring and logging
+        - Scalability considerations
+
+# Knowledge Bases
+knowledge_bases:
+  # System documentation KB
+  - name: "system_docs"
+    project: "system"
+    storage: "chromadb"
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    description: "GETLOOD platform documentation and guides"
+
+  # Code examples KB
+  - name: "code_examples"
+    project: "system"
+    storage: "chromadb"
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    description: "React, Python, and workflow code examples"
+
+# Desktop System
+desktop:
+  # Number of virtual desktops
+  desktop_count: 3
+
+  # Window defaults
+  window_defaults:
+    width: 800
+    height: 600
+    min_width: 400
+    min_height: 300
+
+  # Window snapping
+  snap:
+    enabled: true
+    threshold: 20  # pixels
+    grid_size: 8   # pixels
+
+  # Performance
+  performance:
+    max_windows_per_desktop: 20
+    drag_fps_target: 60
+    animation_duration: 300  # milliseconds
+
+  # Persistence
+  persistence:
+    auto_save_interval: 2000  # milliseconds
+    max_history: 100
+
+# API Gateway
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+  # CORS
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:5173"
+      - "http://localhost:3000"
+    allow_credentials: true
+    allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers: ["*"]
+
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    burst: 20
+
+  # Authentication
+  auth:
+    jwt_secret: "your-secret-key-change-in-production"  # CHANGE THIS!
+    jwt_algorithm: "HS256"
+    access_token_expire_minutes: 60
+    refresh_token_expire_days: 30
+
+# Database (for metadata storage)
+database:
+  url: "postgresql://postgres:postgres@localhost:5432/getlood"
+  pool_size: 20
+  max_overflow: 40
+  echo: false
+
+# Redis (for caching and pub/sub)
+redis:
+  url: "redis://localhost:6379/0"
+  decode_responses: true
+
+# WebSocket
+websocket:
+  heartbeat_interval: 30  # seconds
+  max_connections: 10000
+  message_queue_size: 1000
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Log to file
+  file:
+    enabled: true
+    path: "logs/getlood.log"
+    max_size: "10MB"
+    backup_count: 5
+
+  # Log to stdout
+  console:
+    enabled: true
+
+  # Sentry integration
+  sentry:
+    enabled: false
+    dsn: null  # Set via SENTRY_DSN env var
+    environment: "development"
+    traces_sample_rate: 0.1
+
+# Monitoring
+monitoring:
+  # Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 9090
+
+  # Health check
+  health_check:
+    enabled: true
+    endpoint: "/health"
+
+# Feature Flags
+features:
+  enable_tom: true              # Theory of Mind
+  enable_neural_ui: true        # Neural UI generation
+  enable_workflows: true        # Visual workflows
+  enable_voice: false           # Voice commands
+  enable_multimodal: true       # Image/audio input
+  enable_federation: false      # Federated learning
+
+# Tier Limits
+tiers:
+  free:
+    max_agents: 3
+    max_workflows: 5
+    max_kb_documents: 1000
+    requests_per_day: 100
+
+  pro:
+    max_agents: 20
+    max_workflows: 50
+    max_kb_documents: 10000
+    requests_per_day: 1000
+
+  enterprise:
+    max_agents: -1  # unlimited
+    max_workflows: -1
+    max_kb_documents: -1
+    requests_per_day: -1
+
+# Deployment
+deployment:
+  mode: "standalone"  # standalone, distributed, kubernetes
+
+  # Kubernetes (if mode = kubernetes)
+  kubernetes:
+    namespace: "getlood-prod"
+    replicas:
+      api: 5
+      workers: 10
+    resources:
+      api:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+      workers:
+        requests:
+          memory: "1Gi"
+          cpu: "1000m"
+        limits:
+          memory: "2Gi"
+          cpu: "2000m"
