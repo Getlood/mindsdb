@@ -133,8 +133,8 @@ services:
       dockerfile: Dockerfile
       target: development
       args:
-        - VITE_API_URL=http://localhost:8000
-        - VITE_WS_URL=ws://localhost:8000/ws
+        - VITE_API_URL=http://srv818698.hstgr.cloud:8081/api
+        - VITE_WS_URL=ws://srv818698.hstgr.cloud:8081/ws
     container_name: getlood-frontend
     ports:
       - "5173:5173"
@@ -143,8 +143,8 @@ services:
       - ./frontend/public:/app/public
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=http://localhost:8000
-      - VITE_WS_URL=ws://localhost:8000/ws
+      - VITE_API_URL=http://srv818698.hstgr.cloud:8081/api
+      - VITE_WS_URL=ws://srv818698.hstgr.cloud:8081/ws
     depends_on:
       - getlood-api
     networks:
