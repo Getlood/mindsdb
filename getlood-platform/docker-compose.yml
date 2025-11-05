@@ -1,0 +1,226 @@
+version: '3.8'
+
+services:
+  # MindsDB - Core AI orchestration engine
+  mindsdb:
+    image: mindsdb/mindsdb:latest
+    container_name: getlood-mindsdb
+    ports:
+      - "47334:47334"  # HTTP API
+      - "47335:47335"  # MySQL protocol
+      - "47336:47336"  # MongoDB protocol
+    environment:
+      - MINDSDB_DB_CON=postgresql://postgres:postgres@postgres:5432/mindsdb
+      - MINDSDB_STORAGE_DIR=/root/mdb_storage
+    volumes:
+      - mindsdb_storage:/root/mdb_storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:47334/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # PostgreSQL - Primary database for MindsDB and GETLOOD metadata
+  postgres:
+    image: postgres:15-alpine
+    container_name: getlood-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=mindsdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # Redis - Caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: getlood-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # ChromaDB - Vector database for knowledge bases
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: getlood-chromadb
+    ports:
+      - "8100:8000"
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+      - PERSIST_DIRECTORY=/chroma/chroma
+    volumes:
+      - chromadb_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # GETLOOD API Gateway - FastAPI backend
+  getlood-api:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    container_name: getlood-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - MINDSDB_HTTP_URL=http://mindsdb:47334
+      - MINDSDB_SQL_URL=postgresql://mindsdb:mindsdb@mindsdb:47334/mindsdb
+      - MINDSDB_A2A_URL=http://mindsdb:47334/a2a
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/getlood
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-me}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    volumes:
+      - ./core:/app/core
+      - ./api:/app/api
+      - ./config:/app/config
+      - ./logs:/app/logs
+    depends_on:
+      mindsdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # GETLOOD Frontend - React + Vite
+  getlood-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8000
+        - VITE_WS_URL=ws://localhost:8000/ws
+    container_name: getlood-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000/ws
+    depends_on:
+      - getlood-api
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: getlood-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: getlood-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+  # Nginx - Reverse proxy and load balancer
+  nginx:
+    image: nginx:alpine
+    container_name: getlood-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - getlood-api
+      - getlood-frontend
+    networks:
+      - getlood-network
+    restart: unless-stopped
+
+volumes:
+  mindsdb_storage:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  chromadb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  getlood-network:
+    driver: bridge
