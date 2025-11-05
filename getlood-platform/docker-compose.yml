@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MindsDB - Core AI orchestration engine
   mindsdb:
